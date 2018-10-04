@@ -1,0 +1,870 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: "Right Sizing Base Stack"
+
+Parameters:
+  RightSizingVpcCidrBlock:
+    Type: String
+  RightSizingPublicSubnetOneCidrBlock:
+    Type: String
+  RightSizingPublicSubnetTwoCidrBlock:
+    Type: String
+  RightSizingRepositoryArn:
+    Type: String
+  RightSizingRepositoryName:
+    Type: String       
+  RightSizingDataS3BucketArn:
+    Type: String
+  RightSizingDataS3BucketName:
+    Type: String
+  RightSizingSourceS3BucketName:
+    Type: String
+  RightSizingSourceS3ObjectKey:
+    Type: String   
+  RightSizingClusterName:
+    Type: String
+  RightSizingServiceName:
+    Type: String
+    
+Mappings:
+  LambdaConfiguration:
+    TrustedAdvisorChecks:
+      Ids: fH7LL0l7J9,dH7RR0l6J9,cG7HH0l7J9,tV7YY0l7J9,gI7MM0l7J9,aW9HH0l8J6,0Xc6LMYG8P,iH7PP0l7J9
+
+Resources:
+
+  RightSizingTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: Right-Sizing-Task-Execution-Policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: 
+                  - arn:aws:logs:*:*:*
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource:
+                  - !Ref RightSizingRepositoryArn
+
+  RightSizingTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+              - ecs-tasks.amazonaws.com
+          Action: "sts:AssumeRole"
+      Path: /
+      Policies:
+        - PolicyName: Right-Sizing-Task-Policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: 
+                 - !Sub ${RightSizingDataS3BucketArn}/*
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - cloudwatch:GetMetricData
+                  - cloudwatch:GetMetricStatistics
+                Resource: 
+                  - "*"
+
+  RightSizingVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      CidrBlock: !Ref RightSizingVpcCidrBlock
+
+  RightSizingPublicSubnetOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      VpcId: !Ref RightSizingVpc
+      CidrBlock: !Ref RightSizingPublicSubnetOneCidrBlock
+      MapPublicIpOnLaunch: true
+
+  RightSizingPublicSubnetTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      VpcId: !Ref RightSizingVpc
+      CidrBlock: !Ref RightSizingPublicSubnetTwoCidrBlock
+      MapPublicIpOnLaunch: true
+
+  RightSizingInternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  RightSizingGatewayAttachement:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref RightSizingVpc
+      InternetGatewayId: !Ref RightSizingInternetGateway
+
+  RightSizingPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref RightSizingVpc
+
+  RightSizingPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: RightSizingGatewayAttachement
+    Properties:
+      RouteTableId: !Ref RightSizingPublicRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref RightSizingInternetGateway
+
+  RightSizingPublicSubnetOneRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref RightSizingPublicSubnetOne
+      RouteTableId: !Ref RightSizingPublicRouteTable
+  
+  RightSizingPublicSubnetTwoRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref RightSizingPublicSubnetTwo
+      RouteTableId: !Ref RightSizingPublicRouteTable      
+
+  RightSizingCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Ref RightSizingClusterName
+
+  RightSizingService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Ref RightSizingServiceName
+      Cluster: !Ref RightSizingClusterName
+      DesiredCount: 0
+      TaskDefinition: !Ref RightSizingTaskDefinition
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - !Ref RightSizingPublicSubnetOne
+            - !Ref RightSizingPublicSubnetTwo
+
+  RightSizingTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Cpu: 1024
+      Memory: 2GB
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt RightSizingTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt RightSizingTaskRole.Arn
+      ContainerDefinitions:
+        - Name: right-sizing-metrics
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${RightSizingRepositoryName}:latest
+          Environment:
+            - Name: REGION
+              Value: !Sub ${AWS::Region}
+            - Name: ACCOUNT
+              Value: !Sub ${AWS::AccountId}
+            - Name: STATISTICS
+              Value: Maximum
+            - Name: PERIOD
+              Value: 60
+            - Name: START_TIME
+              Value: 120
+            - Name: END_TIME
+              Value: 0                            
+            - Name: TARGET_BUCKET
+              Value: !Ref RightSizingDataS3BucketName
+          Memory: 1512
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref RightSizingLogGroup
+              awslogs-region: !Sub ${AWS::Region}
+              awslogs-stream-prefix: ecr
+
+  RightSizingLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 1
+
+  RightSizingLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - lambda.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: Right-Sizing-Lambda-Execution-Policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:RunTask
+                Resource:
+                  - !Ref RightSizingTaskDefinition
+              - Effect: Allow
+                Action:
+                  - ecs:DescribeTasks
+                Resource:
+                  - arn:aws:ecs:*:*:task/*
+              - Effect: Allow
+                Action:
+                  - glue:StartCrawler
+                  - glue:GetCrawler
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: 
+                  - arn:aws:logs:*:*:*
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource:
+                  - !Sub ${RightSizingDataS3BucketArn}/*
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource:
+                  - !GetAtt [RightSizingTaskRole, Arn]
+                  - !GetAtt [RightSizingTaskExecutionRole, Arn]
+
+  RightSizingGetLimitsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: Right-Sizing-Get-Limits-Function
+      Handler: lambda.getlimits.lambda_handler      
+      Role: !GetAtt [ RightSizingLambdaExecutionRole, Arn ]
+      CodeUri:
+        Bucket: !Ref RightSizingSourceS3BucketName
+        Key: !Ref RightSizingSourceS3ObjectKey
+      Runtime: python3.6
+      Timeout: 25
+      AutoPublishAlias: latest
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref RightSizingDataS3BucketName
+          SERVICE_CHECKS: !FindInMap [LambdaConfiguration, TrustedAdvisorChecks, Ids]
+
+  RightSizingRefreshLimitsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: Right-Sizing-Refresh-Limits-Function
+      Handler: lambda.refreshlimits.lambda_handler
+      Role: !GetAtt [ RightSizingLambdaExecutionRole, Arn ]
+      CodeUri:
+        Bucket: !Ref RightSizingSourceS3BucketName
+        Key: !Ref RightSizingSourceS3ObjectKey
+      Runtime: python3.6
+      Timeout: 25
+      AutoPublishAlias: latest
+      Environment:
+        Variables:
+          SERVICE_CHECKS: !FindInMap [LambdaConfiguration, TrustedAdvisorChecks, Ids]
+
+  RightSizingRunTaskFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: Right-Sizing-Run-Task-Function
+      Handler: lambda.runtask.lambda_handler
+      Role: !GetAtt [ RightSizingLambdaExecutionRole, Arn ]
+      CodeUri:
+        Bucket: !Ref RightSizingSourceS3BucketName
+        Key: !Ref RightSizingSourceS3ObjectKey
+      Runtime: python3.6
+      Timeout: 25
+      AutoPublishAlias: latest
+      Environment:
+        Variables:
+          CLUSTER_NAME: !Ref RightSizingClusterName
+          TASK_DEFINITION_ARN: !Ref RightSizingTaskDefinition
+          SUBNET_ONE_ID: !Ref RightSizingPublicSubnetOne
+          SUBNET_TWO_ID: !Ref RightSizingPublicSubnetTwo
+
+  RightSizingStatusPollerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: Right-Sizing-Status-Poller-Function
+      Handler: lambda.statuspoller.lambda_handler
+      Role: !GetAtt [ RightSizingLambdaExecutionRole, Arn ]
+      CodeUri:
+        Bucket: !Ref RightSizingSourceS3BucketName
+        Key: !Ref RightSizingSourceS3ObjectKey
+      Runtime: python3.6
+      Timeout: 25
+      AutoPublishAlias: latest
+
+  RightSizingRunCrawlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: Right-Sizing-Run-Crawler-Function
+      Handler: lambda.runcrawler.lambda_handler
+      Role: !GetAtt [ RightSizingLambdaExecutionRole, Arn ]
+      CodeUri:
+        Bucket: !Ref RightSizingSourceS3BucketName
+        Key: !Ref RightSizingSourceS3ObjectKey
+      Runtime: python3.6
+      Timeout: 25
+      AutoPublishAlias: latest
+      Environment:
+        Variables:
+          CRAWLER_NAME: !Ref RightSizingGlueDataCrawler
+
+  RightSizingGetPriceListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: Right-Sizing-Get-Price-List-Function
+      Handler: lambda.getpricelist.lambda_handler
+      Role: !GetAtt [ RightSizingLambdaExecutionRole, Arn ]
+      CodeUri:
+        Bucket: !Ref RightSizingSourceS3BucketName
+        Key: !Ref RightSizingSourceS3ObjectKey
+      Runtime: python3.6
+      Timeout: 300
+      MemorySize: 1024
+      AutoPublishAlias: latest
+      Environment:
+        Variables:
+          PRICE_LIST_URL: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/index.csv
+          BUCKET_NAME: !Ref RightSizingDataS3BucketName
+
+  RightSizingPricesStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: Right-Sizing-Prices-State-Machine
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "Comment": "A state machine that retrieves lists prices",
+              "StartAt": "Get Prices",                  
+              "States": {
+                "Get Prices": {
+                  "Type": "Task",
+                  "Resource": "${RightSizingGetPriceListFunctionArn}",
+                  "ResultPath": "$.guid",
+                  "Next": "Run Crawler"
+                },                        
+                "Run Crawler": {
+                  "Type": "Task",
+                  "Resource": "${RightSizingRunCrawlerFunctionArn}",
+                  "ResultPath": "$.guid",
+                  "Next": "Wait for Crawler"
+                },
+                "Wait for Crawler": {
+                  "Type": "Wait",
+                  "Seconds": 30,
+                  "Next": "Get Crawler Status"
+                },
+                "Get Crawler Status": {
+                  "Type": "Task",
+                  "Resource": "${RightSizingStatusPollerFunctionArn}",
+                  "Next": "Crawler Complete?",
+                  "InputPath": "$.guid",
+                  "ResultPath": "$.status"
+                },
+                "Crawler Complete?": {
+                  "Type": "Choice",
+                  "Choices": [
+                    {
+                      "Variable": "$.status",
+                      "StringEquals": "FAILED",
+                      "Next": "Crawler Failed"
+                    },
+                    {
+                      "Variable": "$.status",
+                      "StringEquals": "SUCCEEDED",
+                      "Next": "Done"
+                    }
+                  ],
+                  "Default": "Wait for Crawler"
+                },
+                "Crawler Failed": {
+                  "Type": "Fail",
+                  "Cause": "AWS Glue Crawler Failed",
+                  "Error": "Get Crawler returned FAILED"
+                },                
+                "Done": {
+                  "Type": "Pass",
+                  "End": true
+                }  
+              }
+            }
+          - {
+              RightSizingGetPriceListFunctionArn: !Join [ "", [!GetAtt RightSizingGetPriceListFunction.Arn, ":latest"] ],
+              RightSizingRunCrawlerFunctionArn: !Join [ "", [!GetAtt RightSizingRunCrawlerFunction.Arn, ":latest"] ],
+              RightSizingStatusPollerFunctionArn: !Join [ "", [!GetAtt RightSizingStatusPollerFunction.Arn, ":latest"] ]
+            }
+      RoleArn: !GetAtt [ RightSizingStatesExecutionRole, Arn ]
+
+  RightSizingMetricsStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: Right-Sizing-Metrics-State-Machine
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "Comment": "A state machine that retrieves metrics",
+              "StartAt": "Run Task",                  
+              "States": {
+                "Run Task": {
+                  "Type": "Task",
+                  "Resource": "${RightSizingRunTaskFunctionArn}",
+                  "ResultPath": "$.guid",
+                  "Next": "Wait for Task"
+                },
+                "Wait for Task": {
+                  "Type": "Wait",
+                  "Seconds": 30,
+                  "Next": "Get Job Status"
+                },
+                "Get Job Status": {
+                  "Type": "Task",
+                  "Resource": "${RightSizingStatusPollerFunctionArn}",
+                  "Next": "Task Complete?",
+                  "InputPath": "$.guid",
+                  "ResultPath": "$.status"
+                },
+                "Task Complete?": {
+                  "Type": "Choice",
+                  "Choices": [
+                    {
+                      "Variable": "$.status",
+                      "StringEquals": "STOPPED",
+                      "Next": "Run Crawler"
+                    }
+                  ],
+                  "Default": "Wait for Task"
+                },                     
+                "Run Crawler": {
+                  "Type": "Task",
+                  "Resource": "${RightSizingRunCrawlerFunctionArn}",
+                  "ResultPath": "$.guid",
+                  "Next": "Wait for Crawler"
+                },
+                "Wait for Crawler": {
+                  "Type": "Wait",
+                  "Seconds": 30,
+                  "Next": "Get Crawler Status"
+                },
+                "Get Crawler Status": {
+                  "Type": "Task",
+                  "Resource": "${RightSizingStatusPollerFunctionArn}",
+                  "Next": "Crawler Complete?",
+                  "InputPath": "$.guid",
+                  "ResultPath": "$.status"
+                },
+                "Crawler Complete?": {
+                  "Type": "Choice",
+                  "Choices": [
+                    {
+                      "Variable": "$.status",
+                      "StringEquals": "FAILED",
+                      "Next": "Crawler Failed"
+                    },
+                    {
+                      "Variable": "$.status",
+                      "StringEquals": "SUCCEEDED",
+                      "Next": "Done"
+                    }
+                  ],
+                  "Default": "Wait for Crawler"
+                },
+                "Crawler Failed": {
+                  "Type": "Fail",
+                  "Cause": "AWS Glue Crawler Failed",
+                  "Error": "Get Crawler returned FAILED"
+                },
+                "Done": {
+                  "Type": "Pass",
+                  "End": true
+                }
+              }
+            }
+          - {
+              RightSizingRunTaskFunctionArn: !Join [ "", [!GetAtt RightSizingRunTaskFunction.Arn, ":latest"] ],
+              RightSizingRunCrawlerFunctionArn: !Join [ "", [!GetAtt RightSizingRunCrawlerFunction.Arn, ":latest"] ],              
+              RightSizingStatusPollerFunctionArn: !Join [ "", [!GetAtt RightSizingStatusPollerFunction.Arn, ":latest"] ]
+            }
+      RoleArn: !GetAtt [ RightSizingStatesExecutionRole, Arn ]
+
+  RightSizingLimitsStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: Right-Sizing-Limits-State-Machine
+      DefinitionString:
+        !Sub
+          - |-
+            {
+              "Comment": "A state machine that retrieves service limits",
+              "StartAt": "Refresh Limits",                  
+              "States": {
+                "Refresh Limits": {
+                  "Type": "Task",
+                  "Resource": "${RightSizingRefreshLimitsFunctionArn}",
+                  "ResultPath": "$.guid",
+                  "Next": "Wait for Limit Checks"
+                },                        
+                "Wait for Limit Checks": {
+                  "Type": "Wait",
+                  "Seconds": 30,
+                  "Next": "Get Limit Checks Status"
+                },
+                "Get Limit Checks Status": {
+                  "Type": "Task",
+                  "Resource": "${RightSizingStatusPollerFunctionArn}",
+                  "Next": "Limit Checks Complete?",
+                  "InputPath": "$.guid",
+                  "ResultPath": "$.status"
+                },
+                "Limit Checks Complete?": {
+                  "Type": "Choice",
+                  "Choices": [
+                    {
+                      "Variable": "$.status",
+                      "StringEquals": "FAILED",
+                      "Next": "Limit Checks Failed"
+                    },
+                    {
+                      "Variable": "$.status",
+                      "StringEquals": "SUCCEEDED",
+                      "Next": "Get Limits"
+                    }
+                  ],
+                  "Default": "Wait for Limit Checks"
+                },
+                "Limit Checks Failed": {
+                  "Type": "Fail",
+                  "Cause": "AWS Trusted Advisor Checks Failed",
+                  "Error": "Refresh Statuses returned ABANDONED"
+                },                
+                "Get Limits": {
+                  "Type": "Task",
+                  "Resource": "${RightSizingGetLimitsFunctionArn}",
+                  "Next": "Done",
+                  "InputPath": "$.guid"
+                },              
+                "Done": {
+                  "Type": "Pass",
+                  "End": true
+                }  
+              }
+            }
+          - {
+              RightSizingStatusPollerFunctionArn: !Join [ "", [!GetAtt RightSizingStatusPollerFunction.Arn, ":latest"] ],
+              RightSizingGetLimitsFunctionArn: !Join [ "", [!GetAtt RightSizingGetLimitsFunction.Arn, ":latest"] ],
+              RightSizingRefreshLimitsFunctionArn: !Join [ "", [!GetAtt RightSizingRefreshLimitsFunction.Arn, ":latest"] ]
+            }
+      RoleArn: !GetAtt [ RightSizingStatesExecutionRole, Arn ]
+
+  RightSizingStatesExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+            Action: 
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: Right-Sizing-States-Execution-Policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Sub ${RightSizingGetPriceListFunction.Arn}:latest
+                  - !Sub ${RightSizingRunTaskFunction.Arn}:latest
+                  - !Sub ${RightSizingRunCrawlerFunction.Arn}:latest
+                  - !Sub ${RightSizingStatusPollerFunction.Arn}:latest
+                  - !Sub ${RightSizingGetLimitsFunction.Arn}:latest
+                  - !Sub ${RightSizingRefreshLimitsFunction.Arn}:latest
+
+  RightSizingGlueExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+              - glue.amazonaws.com
+          Action: 
+            - sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: Right-Sizing-Glue-Execution-Policy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+              - s3:ListBucket
+              - s3:GetObject
+            Resource:
+              - !Sub ${RightSizingDataS3BucketArn}/*
+
+  RightSizingGlueDatabase:
+    Type: "AWS::Glue::Database"
+    Properties:
+      DatabaseInput:
+        Name: "rightsizing"
+      CatalogId: !Ref AWS::AccountId
+
+  RightSizingGlueDataCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: Right-Sizing-Crawler
+      Role: !GetAtt [RightSizingGlueExecutionRole, Arn]
+      DatabaseName: !Ref RightSizingGlueDatabase
+      Targets:
+        S3Targets:
+          - Path: !Join [ "", ["s3://", !Ref RightSizingDataS3BucketName] ]
+          - Exclusions:
+              - query-results/**
+      SchemaChangePolicy:
+        UpdateBehavior: "UPDATE_IN_DATABASE"
+        DeleteBehavior: "DELETE_FROM_DATABASE"    
+
+  RightSizingMaxNamedQuery:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      QueryString: >
+        select 
+          a.az,
+          a.instancetype,
+          b.vcpu,
+          b.memory,
+          b.storage,
+          b."network performance",
+          b."processor architecture",
+          b.priceperunit,
+          a.instanceid,
+          max(a.maxcpu) as maxcpu,
+          max(a.maxiops) as maxiops,
+          max(a.maxnetwork) as maxnetwork,
+          a.instancetags from 
+            (
+                select instanceid, 
+                    instancetags, 
+                    instanceType, 
+                    az,
+                    max(CPUUtilization) as maxcpu,
+                    max(diskreadops/60 + diskwriteops/60) as maxiops,
+                    max((networkin/60/1024/1024)*8 + (networkout/60/1024/1024)*8) as maxnetwork
+                from metrics 
+                where accountid is not null
+                group by instanceid, 
+                        instancetags,
+                        instanceType,
+                        az
+            ) a, 
+              prices b
+        where a.instanceid in 
+            (
+                select instanceid from 
+                    (
+                        select instanceid , max(maxcpu) as topcpu from 
+                            (
+                                select instanceid, 
+                                      instancetags, 
+                                      instanceType, 
+                                      az,
+                                      max(CPUUtilization) as maxcpu,
+                                      max(diskreadops/60 + diskwriteops/60) as maxiops,
+                                      max((networkin/60/1024/1024)*8 + (networkout/60/1024/1024)*8) as maxnetwork
+                                from metrics 
+                                where accountid is not null
+                                group by instanceid,
+                                        instancetags,
+                                        instanceType,
+                                        az
+                            )
+                        group by instanceid
+                    )
+                where topcpu<60 --max CPU utilization < 60%
+            )
+        and a.instancetype = b."instance type"
+        and substr(a.az, 1, length(a.az)-1) = case b.location
+                    when 'US East (Ohio)' then 'us-east-2'
+                    when 'US East (N. Virginia)' then 'us-east-1'
+                    when 'US West (N. California)' then 'us-west-1'
+                    when 'US West (Oregon)' then 'us-west-2'
+                    when 'Asia Pacific (Mumbai)' then 'ap-south-1'
+                    when 'Asia Pacific (Seoul)' then 'ap-northeast-2'
+                    when 'Asia Pacific (Osaka-Local)' then 'ap-northeast-3'
+                    when 'Asia Pacific (Singapore)' then 'ap-southeast-1'
+                    when 'Asia Pacific (Sydney)' then 'ap-southeast-2'
+                    when 'Asia Pacific (Tokyo)' then 'ap-northeast-1'
+                    when 'Canada (Central)' then 'ca-central-1'
+                    when 'China (Beijing)' then 'cn-north-1'
+                    when 'China (Ningxia)' then 'cn-northwest-1'
+                    when 'EU (Frankfurt)' then 'eu-central-1'
+                    when 'EU (Ireland)' then 'eu-west-1'
+                    when 'EU (London)' then 'eu-west-2'
+                    when 'EU (Paris)' then 'eu-west-3'
+                    when 'South America (Sao Paulo)' then 'sa-east-1'
+                  end
+        and b.termtype = 'OnDemand'
+        and b.servicecode = 'AmazonEC2'
+        and b.tenancy = 'Shared'
+        and b."operating system" = 'Linux' 
+        and b."pre installed s/w" = 'NA'
+        group by a.az,
+                a.instancetype,
+                b.vcpu,
+                b.memory,
+                b.storage,
+                b."network performance",
+                b."processor architecture",
+                b.priceperunit,
+                a.instanceid,
+                a.instancetags
+      Database: !Ref RightSizingGlueDatabase
+      Name: Right-Sizing-Max-Query
+
+  RightSizingP95NamedQuery:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      QueryString: >
+        select 
+          a.az,
+          a.instancetype,
+          b.vcpu,
+          b.memory,
+          b.storage,
+          b."network performance",
+          b."processor architecture",
+          b.priceperunit,
+          a.instanceid,
+          approx_percentile(a.p95cpu,     0.95) as p95cpu,
+          approx_percentile(a.p95iops,    0.95) as p95iops,
+          approx_percentile(a.p95network, 0.95) as p95network,
+          a.instancetags from 
+            (
+                select instanceid, 
+                    instancetags, 
+                    instanceType, 
+                    az,
+                    approx_percentile(CPUUtilization, 0.95) as p95cpu,
+                    approx_percentile((diskreadops/60 + diskwriteops/60), 0.95) as p95iops,
+                    approx_percentile(((networkin/60/1024/1024)*8 + (networkout/60/1024/1024)*8), 0.95) as p95network
+                from metrics 
+                where accountid is not null
+                group by instanceid, 
+                        instancetags,
+                        instanceType,
+                        az
+            ) a, 
+              prices b 
+        where a.instancetype = b."instance type"
+        and substr(a.az, 1, length(a.az)-1) = case b.location
+                    when 'US East (Ohio)' then 'us-east-2'
+                    when 'US East (N. Virginia)' then 'us-east-1'
+                    when 'US West (N. California)' then 'us-west-1'
+                    when 'US West (Oregon)' then 'us-west-2'
+                    when 'Asia Pacific (Mumbai)' then 'ap-south-1'
+                    when 'Asia Pacific (Seoul)' then 'ap-northeast-2'
+                    when 'Asia Pacific (Osaka-Local)' then 'ap-northeast-3'
+                    when 'Asia Pacific (Singapore)' then 'ap-southeast-1'
+                    when 'Asia Pacific (Sydney)' then 'ap-southeast-2'
+                    when 'Asia Pacific (Tokyo)' then 'ap-northeast-1'
+                    when 'Canada (Central)' then 'ca-central-1'
+                    when 'China (Beijing)' then 'cn-north-1'
+                    when 'China (Ningxia)' then 'cn-northwest-1'
+                    when 'EU (Frankfurt)' then 'eu-central-1'
+                    when 'EU (Ireland)' then 'eu-west-1'
+                    when 'EU (London)' then 'eu-west-2'
+                    when 'EU (Paris)' then 'eu-west-3'
+                    when 'South America (Sao Paulo)' then 'sa-east-1'
+                  end
+        and b.termtype = 'OnDemand'
+        and b.servicecode = 'AmazonEC2'
+        and b.tenancy = 'Shared'
+        and b."operating system" = 'Linux' 
+        and b."pre installed s/w" = 'NA'
+        group by a.az,
+                a.instancetype,
+                b.vcpu,
+                b.memory,
+                b.storage,
+                b."network performance",
+                b."processor architecture",
+                b.priceperunit,
+                a.instanceid,
+                a.instancetags
+      Database: !Ref RightSizingGlueDatabase
+      Name: Right-Sizing-p95-Query
+
+  RightSizingNetworkNamedQuery:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      QueryString: >
+        select 
+          (min(interval.sum.bits_per_second)/1000000000) as min,
+          (max(interval.sum.bits_per_second)/1000000000) as max,
+          (avg(interval.sum.bits_per_second)/1000000000) as avg,
+          (approx_percentile(interval.sum.bits_per_second, 0.95)/1000000000) as p95,
+          region, 
+          instancetype 
+        from network cross join unnest(intervals) with ordinality as t(interval, counter)
+        -- WHERE cardinality(intervals) = 60
+        group by region,
+                instancetype 
+        order by region,
+                instancetype;
+      Database: !Ref RightSizingGlueDatabase
+      Name: Right-Sizing-Network-Query      

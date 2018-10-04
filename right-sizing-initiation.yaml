@@ -1,0 +1,473 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Right Sizing Initiation Stack
+
+Parameters:
+  RightSizingPipelineS3Bucket:  
+    Type: String
+    Default: right-sizing-configuration
+  RightSizingVpcCidrBlock:
+    Type: String
+    Default: 10.215.0.0/24
+  RightSizingPublicSubnetOneCidrBlock:
+    Type: String
+    Default: 10.215.0.0/25
+  RightSizingPublicSubnetTwoCidrBlock:
+    Type: String
+    Default: 10.215.0.128/25
+  RightSizingCodeBuildComputeType: 
+    Type: String
+    Default: BUILD_GENERAL1_LARGE
+    AllowedValues: 
+      - BUILD_GENERAL1_SMALL
+      - BUILD_GENERAL1_MEDIUM
+      - BUILD_GENERAL1_LARGE
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterLabels:
+      RightSizingPipelineS3Bucket:
+        default: Configuration Bucket
+      RightSizingVpcCidrBlock:
+        default: VPC CIDR Block
+      RightSizingPublicSubnetOneCidrBlock:
+        default: Public Subnet 1 CIDR Block
+      RightSizingPublicSubnetTwoCidrBlock:
+        default: Public Subnet 2 CIDR Block
+      RightSizingCodeBuildComputeType:
+        default: Compute Instance Type
+    ParameterGroups:
+      - Label:
+          default: Cluster Configuration
+        Parameters:
+          - RightSizingVpcCidrBlock
+          - RightSizingPublicSubnetOneCidrBlock
+          - RightSizingPublicSubnetTwoCidrBlock
+      - Label:
+          default: Bucket Configuration
+        Parameters:
+          - RightSizingPipelineS3Bucket   
+      - Label:
+          default: Build Configuration
+        Parameters:
+          - RightSizingCodeBuildComputeType             
+
+
+Mappings:
+  ClusterConfiguration:
+    RightSizingClusterName:
+      Name: Right-Sizing-Cluster
+    RightSizingServiceName:
+      Name: Right-Sizing-Service
+  RepositoryConfiguration:
+    RightSizingRepositoryName:
+      Name: right-sizing-repository
+  PipelineConfiguration:
+    RightSizingPipelineName:
+      Name: Right-Sizing-CodePipeline
+  BuildConfiguration:
+    RightSizingBuildName:
+      Name: Right-Sizing-CodeBuild
+  StackConfiguration:
+    RightSizingBaseStackName:
+      Name: Right-Sizing-Base-Stack
+    RightSizingBaseStackKey:
+      Name: stacks/right-sizing-base.yaml
+    RightSizingChangeSetName:
+      Name: Right-Sizing-Change-Set
+
+Resources:
+
+  RightSizingRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !FindInMap [RepositoryConfiguration, RightSizingRepositoryName, Name]
+
+  RightSizingPipelineArtifactS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub right-sizing-artifact-${AWS::AccountId}
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  RightSizingDataS3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub right-sizing-staging-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  RightSizingCloudFormationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - cloudformation.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: Right-Sizing-CloudFormation-Policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:GetFunction
+                  - lambda:GetFunctionConfiguration
+                  - lambda:CreateFunction
+                  - lambda:DeleteFunction
+                  - lambda:CreateAlias
+                  - lambda:DeleteAlias
+                  - lambda:ListVersionsByFunction                   
+                  - lambda:PublishVersion
+                  - states:CreateStateMachine
+                  - states:DeleteStateMachine
+                  - ecs:DescribeServices
+                  - ecs:UpdateService
+                  - ecs:DescribeClusters
+                  - ecs:RegisterTaskDefinition
+                  - ecs:DeregisterTaskDefinition
+                  - ecs:CreateService
+                  - ecs:DeleteService
+                  - ecs:CreateCluster
+                  - ecs:DeleteCluster                  
+                  - ec2:DescribeAccountAttributes
+                  - ec2:DescribeVpcs
+                  - ec2:CreateVpc
+                  - ec2:ModifyVpcAttribute
+                  - ec2:DeleteVpc
+                  - ec2:DescribeAvailabilityZones
+                  - ec2:DescribeSubnets                     
+                  - ec2:CreateSubnet
+                  - ec2:ModifySubnetAttribute
+                  - ec2:DeleteSubnet 
+                  - ec2:DescribeInternetGateways
+                  - ec2:CreateInternetGateway               
+                  - ec2:AttachInternetGateway                  
+                  - ec2:DetachInternetGateway                  
+                  - ec2:DeleteInternetGateway
+                  - ec2:DescribeRouteTables
+                  - ec2:CreateRouteTable
+                  - ec2:AssociateRouteTable
+                  - ec2:DisassociateRouteTable
+                  - ec2:DeleteRouteTable
+                  - ec2:CreateRoute  
+                  - ec2:DeleteRoute  
+                  - cloudformation:CreateChangeSet 
+                  - athena:CreateNamedQuery 
+                  - athena:DeleteNamedQuery
+                  - glue:CreateCrawler
+                  - glue:GetCrawler
+                  - glue:StopCrawler
+                  - glue:DeleteCrawler
+                  - glue:CreateDatabase
+                  - glue:DeleteDatabase
+                  - iam:CreateRole
+                  - iam:PutRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:GetRole
+                  - iam:PassRole
+                  - iam:DeleteRole
+                  - iam:DeleteRolePolicy
+                  - iam:DetachRolePolicy 
+                  - logs:CreateLogGroup
+                  - logs:PutRetentionPolicy                 
+                  - logs:DeleteLogGroup
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject                  
+                Resource:
+                  - !Sub arn:aws:s3:::${RightSizingPipelineArtifactS3Bucket}/*
+
+  RightSizingCodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: Right-Sizing-CodePipeline-Policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketVersioning
+                Resource:
+                  - !Sub arn:aws:s3:::${RightSizingPipelineArtifactS3Bucket}
+                  - !Sub arn:aws:s3:::${RightSizingPipelineS3Bucket}
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject                  
+                  - s3:GetObjectVersion
+                Resource:
+                  - !Sub arn:aws:s3:::${RightSizingPipelineArtifactS3Bucket}/*
+                  - !Sub arn:aws:s3:::${RightSizingPipelineS3Bucket}/*
+              - Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                Resource: !Sub arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${RightSizingCodeBuild}
+              - Effect: Allow
+                Action:
+                  - ecs:DescribeServices
+                  - ecs:DescribeTaskDefinition
+                  - ecs:DescribeTasks
+                  - ecs:ListTasks
+                  - ecs:RegisterTaskDefinition
+                  - ecs:UpdateService
+                Resource: "*"                
+              - Effect: Allow
+                Action:
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:UploadArchive
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:CancelUploadArchive
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - cloudformation:DescribeStacks
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:ExecuteChangeSet
+                Resource: 
+                  !Sub
+                    - |-
+                      arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${RightSizingBaseStackName}/*
+                    - {
+                        RightSizingBaseStackName: !FindInMap [StackConfiguration, RightSizingBaseStackName, Name]
+                      }                      
+                
+  RightSizingCodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !FindInMap [PipelineConfiguration, RightSizingPipelineName, Name]
+      RoleArn: !GetAtt RightSizingCodePipelineRole.Arn
+      ArtifactStore:
+        Location: !Ref RightSizingPipelineArtifactS3Bucket
+        Type: S3
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: S3
+              OutputArtifacts:
+                - Name: SourceApp
+              Configuration:
+                S3Bucket: !Ref RightSizingPipelineS3Bucket
+                S3ObjectKey: right-sizing-configuration.zip
+              RunOrder: 1
+        - Name: Build
+          Actions:
+              - Name: CodeBuild
+                InputArtifacts:
+                  - Name: SourceApp
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Version: 1
+                  Provider: CodeBuild
+                OutputArtifacts:
+                  - Name: BuiltApp
+                Configuration:
+                  ProjectName: !Ref RightSizingCodeBuild
+        - Name: Deploy
+          Actions:
+            - Name: CreateChangeSet
+              InputArtifacts:
+                - Name: SourceApp
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: CloudFormation
+              Configuration:
+                ActionMode: CHANGE_SET_REPLACE
+                RoleArn: !GetAtt RightSizingCloudFormationRole.Arn
+                Capabilities: CAPABILITY_NAMED_IAM
+                StackName: !FindInMap [StackConfiguration, RightSizingBaseStackName, Name]
+                ChangeSetName: !FindInMap [StackConfiguration, RightSizingChangeSetName, Name]
+                TemplatePath: !Join [ "", ["SourceApp::", !FindInMap [StackConfiguration, RightSizingBaseStackKey, Name] ] ]
+                ParameterOverrides: 
+                  !Sub
+                    - |-
+                      {
+                        "RightSizingVpcCidrBlock": "${RightSizingVpcCidrBlock}",
+                        "RightSizingPublicSubnetOneCidrBlock": "${RightSizingPublicSubnetOneCidrBlock}",
+                        "RightSizingPublicSubnetTwoCidrBlock": "${RightSizingPublicSubnetTwoCidrBlock}",
+                        "RightSizingRepositoryArn": "${RightSizingRepositoryArn}",
+                        "RightSizingRepositoryName": "${RightSizingRepositoryName}",
+                        "RightSizingClusterName": "${RightSizingClusterName}",
+                        "RightSizingServiceName": "${RightSizingServiceName}",
+                        "RightSizingDataS3BucketArn": "${RightSizingDataS3BucketArn}",
+                        "RightSizingDataS3BucketName": "${RightSizingDataS3Bucket}",
+                        "RightSizingSourceS3BucketName" : { "Fn::GetArtifactAtt": ["SourceApp", "BucketName"] },
+                        "RightSizingSourceS3ObjectKey" : { "Fn::GetArtifactAtt": ["SourceApp", "ObjectKey"] }
+                        }
+                    - {
+                        RightSizingRepositoryArn: !GetAtt [ RightSizingRepository, Arn ],
+                        RightSizingRepositoryName: !FindInMap [RepositoryConfiguration, RightSizingRepositoryName, Name],
+                        RightSizingClusterName: !FindInMap [ClusterConfiguration, RightSizingClusterName, Name],
+                        RightSizingServiceName: !FindInMap [ClusterConfiguration, RightSizingServiceName, Name],
+                        RightSizingDataS3BucketArn: !GetAtt [RightSizingDataS3Bucket, Arn]
+                      }
+              RunOrder: 1
+            - Name: ExecuteChangeSet
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: 1
+              Configuration:
+                ActionMode: CHANGE_SET_EXECUTE
+                RoleArn: !GetAtt RightSizingCloudFormationRole.Arn
+                StackName: !FindInMap [StackConfiguration, RightSizingBaseStackName, Name]
+                ChangeSetName: !FindInMap [StackConfiguration, RightSizingChangeSetName, Name]
+              RunOrder: 2                             
+            - Name: DeployImage
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: ECS
+              Configuration:
+                ClusterName: !FindInMap [ClusterConfiguration, RightSizingClusterName, Name]
+                ServiceName: !FindInMap [ClusterConfiguration, RightSizingServiceName, Name]
+                FileName: images.json
+              InputArtifacts:
+                - Name: BuiltApp
+              RunOrder: 3
+
+  RightSizingCodeDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codedeploy.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+  RightSizingCodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: Right-Sizing-CodeBuild-Policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "arn:aws:logs:*:*:*"
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject                  
+                  - s3:GetObjectVersion
+                Resource:
+                  - !Sub arn:aws:s3:::${RightSizingPipelineArtifactS3Bucket}/*
+              - Effect: Allow
+                Action:
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:PutImage
+                  - ecr:InitiateLayerUpload
+                  - ecr:UploadLayerPart
+                  - ecr:CompleteLayerUpload
+                Resource: !GetAtt RightSizingRepository.Arn
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: "*"
+
+  RightSizingCodeBuild:
+      Type: AWS::CodeBuild::Project
+      Properties:
+          Name: !FindInMap [BuildConfiguration, RightSizingBuildName, Name]
+          ServiceRole: !GetAtt RightSizingCodeBuildRole.Arn
+          Source:
+              Type: CODEPIPELINE
+              BuildSpec: |
+                version: 0.2
+                phases:
+                  pre_build:
+                    commands:
+                      - $(aws ecr get-login --no-include-email)
+                      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+                      - IMAGE_TAG=${COMMIT_HASH:=latest}                      
+                  build:
+                    commands:
+                      - docker build --tag $REPOSITORY_URI:latest ./task
+                      - docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG
+                  post_build:
+                    commands:
+                      - docker push $REPOSITORY_URI:latest
+                      - docker push $REPOSITORY_URI:$IMAGE_TAG
+                      - printf '[{"name":"right-sizing-metrics","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > images.json
+                artifacts:
+                  files: images.json
+          Environment:
+              ComputeType: !Ref RightSizingCodeBuildComputeType
+              Image: aws/codebuild/docker:17.09.0
+              Type: LINUX_CONTAINER
+              EnvironmentVariables:
+                - Name: AWS_DEFAULT_REGION
+                  Value: !Ref AWS::Region
+                - Name: REPOSITORY_URI
+                  Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${RightSizingRepository}
+          Artifacts:
+              Name: !Sub ${RightSizingPipelineArtifactS3Bucket}-Built
+              Type: CODEPIPELINE

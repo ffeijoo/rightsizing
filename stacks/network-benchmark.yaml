@@ -1,0 +1,592 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Network Benchmark Stack"
+
+Parameters:
+  NetworkBenchmarkTestDuration:
+    Type: String
+  NetworkBenchmarkKeyPair:
+    Type: AWS::EC2::KeyPair::KeyName
+  NetworkBenchmarkS3Bucket:
+    Type: String
+    Default: right-sizing-staging
+  NetworkBenchmarkVpc:
+    Type: AWS::EC2::VPC::Id
+  NetworkBenchmarkSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+  NetworkBenchmarkServerSpotMaxPrice:
+    Type: String
+    Default: 1.1800  
+  NetworkBenchmarkServerInstanceType:
+    Type: String
+    Default: c5.18xlarge
+    AllowedValues:
+      - t1.micro 
+      - t2.nano
+      - t2.micro 
+      - t2.small 
+      - t2.medium
+      - t2.large
+      - t2.xlarge 
+      - t2.2xlarge 
+      - t3.nano 
+      - t3.micro 
+      - t3.small 
+      - t3.medium 
+      - t3.large 
+      - t3.xlarge 
+      - t3.2xlarge 
+      - m1.small 
+      - m1.medium 
+      - m1.large 
+      - m1.xlarge 
+      - m3.medium 
+      - m3.large 
+      - m3.xlarge 
+      - m3.2xlarge 
+      - m4.large 
+      - m4.xlarge 
+      - m4.2xlarge 
+      - m4.4xlarge 
+      - m4.10xlarge 
+      - m4.16xlarge 
+      - m2.xlarge 
+      - m2.2xlarge 
+      - m2.4xlarge 
+      - cr1.8xlarge 
+      - r3.large 
+      - r3.xlarge 
+      - r3.2xlarge 
+      - r3.4xlarge 
+      - r3.8xlarge 
+      - r4.large 
+      - r4.xlarge
+      - r4.2xlarge 
+      - r4.4xlarge 
+      - r4.8xlarge 
+      - r4.16xlarge
+      - r5.large 
+      - r5.xlarge 
+      - r5.2xlarge 
+      - r5.4xlarge 
+      - r5.8xlarge 
+      - r5.12xlarge 
+      - r5.16xlarge 
+      - r5.24xlarge 
+      - r5.metal 
+      - r5d.large 
+      - r5d.xlarge 
+      - r5d.2xlarge 
+      - r5d.4xlarge 
+      - r5d.8xlarge 
+      - r5d.12xlarge 
+      - r5d.16xlarge 
+      - r5d.24xlarge 
+      - r5d.metal 
+      - x1.16xlarge 
+      - x1.32xlarge 
+      - x1e.xlarge 
+      - x1e.2xlarge 
+      - x1e.4xlarge 
+      - x1e.8xlarge 
+      - x1e.16xlarge 
+      - x1e.32xlarge 
+      - i2.xlarge 
+      - i2.2xlarge 
+      - i2.4xlarge 
+      - i2.8xlarge 
+      - i3.large 
+      - i3.xlarge
+      - i3.2xlarge 
+      - i3.4xlarge 
+      - i3.8xlarge 
+      - i3.16xlarge
+      - i3.metal 
+      - hi1.4xlarge 
+      - hs1.8xlarge 
+      - c1.medium 
+      - c1.xlarge 
+      - c3.large 
+      - c3.xlarge 
+      - c3.2xlarge 
+      - c3.4xlarge 
+      - c3.8xlarge 
+      - c4.large 
+      - c4.xlarge 
+      - c4.2xlarge 
+      - c4.4xlarge
+      - c4.8xlarge 
+      - c5.large 
+      - c5.xlarge 
+      - c5.2xlarge 
+      - c5.4xlarge 
+      - c5.9xlarge 
+      - c5.18xlarge 
+      - c5d.large 
+      - c5d.xlarge 
+      - c5d.2xlarge 
+      - c5d.4xlarge 
+      - c5d.9xlarge 
+      - c5d.18xlarge 
+      - cc1.4xlarge 
+      - cc2.8xlarge 
+      - g2.2xlarge 
+      - g2.8xlarge 
+      - g3.4xlarge 
+      - g3.8xlarge 
+      - g3.16xlarge 
+      - cg1.4xlarge 
+      - p2.xlarge 
+      - p2.8xlarge
+      - p2.16xlarge
+      - p3.2xlarge 
+      - p3.8xlarge 
+      - p3.16xlarge 
+      - d2.xlarge 
+      - d2.2xlarge 
+      - d2.4xlarge 
+      - d2.8xlarge 
+      - f1.2xlarge 
+      - f1.4xlarge 
+      - f1.16xlarge 
+      - m5.large 
+      - m5.xlarge 
+      - m5.2xlarge 
+      - m5.4xlarge 
+      - m5.12xlarge 
+      - m5.24xlarge 
+      - m5d.large 
+      - m5d.xlarge 
+      - m5d.2xlarge 
+      - m5d.4xlarge 
+      - m5d.12xlarge 
+      - m5d.24xlarge 
+      - h1.2xlarge
+      - h1.4xlarge 
+      - h1.8xlarge 
+      - h1.16xlarge 
+      - z1d.large 
+      - z1d.xlarge 
+      - z1d.2xlarge 
+      - z1d.3xlarge 
+      - z1d.6xlarge 
+      - z1d.12xlarge 
+      - u-6tb1.metal 
+      - u-9tb1.metal 
+      - u-12tb1.metal    
+  NetworkBenchmarkClientSpotMaxPrice:
+    Type: String
+    Default: 0.0036
+  NetworkBenchmarkClientInstanceType:
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t1.micro 
+      - t2.nano
+      - t2.micro 
+      - t2.small 
+      - t2.medium
+      - t2.large
+      - t2.xlarge 
+      - t2.2xlarge 
+      - t3.nano 
+      - t3.micro 
+      - t3.small 
+      - t3.medium 
+      - t3.large 
+      - t3.xlarge 
+      - t3.2xlarge 
+      - m1.small 
+      - m1.medium 
+      - m1.large 
+      - m1.xlarge 
+      - m3.medium 
+      - m3.large 
+      - m3.xlarge 
+      - m3.2xlarge 
+      - m4.large 
+      - m4.xlarge 
+      - m4.2xlarge 
+      - m4.4xlarge 
+      - m4.10xlarge 
+      - m4.16xlarge 
+      - m2.xlarge 
+      - m2.2xlarge 
+      - m2.4xlarge 
+      - cr1.8xlarge 
+      - r3.large 
+      - r3.xlarge 
+      - r3.2xlarge 
+      - r3.4xlarge 
+      - r3.8xlarge 
+      - r4.large 
+      - r4.xlarge
+      - r4.2xlarge 
+      - r4.4xlarge 
+      - r4.8xlarge 
+      - r4.16xlarge
+      - r5.large 
+      - r5.xlarge 
+      - r5.2xlarge 
+      - r5.4xlarge 
+      - r5.8xlarge 
+      - r5.12xlarge 
+      - r5.16xlarge 
+      - r5.24xlarge 
+      - r5.metal 
+      - r5d.large 
+      - r5d.xlarge 
+      - r5d.2xlarge 
+      - r5d.4xlarge 
+      - r5d.8xlarge 
+      - r5d.12xlarge 
+      - r5d.16xlarge 
+      - r5d.24xlarge 
+      - r5d.metal 
+      - x1.16xlarge 
+      - x1.32xlarge 
+      - x1e.xlarge 
+      - x1e.2xlarge 
+      - x1e.4xlarge 
+      - x1e.8xlarge 
+      - x1e.16xlarge 
+      - x1e.32xlarge 
+      - i2.xlarge 
+      - i2.2xlarge 
+      - i2.4xlarge 
+      - i2.8xlarge 
+      - i3.large 
+      - i3.xlarge
+      - i3.2xlarge 
+      - i3.4xlarge 
+      - i3.8xlarge 
+      - i3.16xlarge
+      - i3.metal 
+      - hi1.4xlarge 
+      - hs1.8xlarge 
+      - c1.medium 
+      - c1.xlarge 
+      - c3.large 
+      - c3.xlarge 
+      - c3.2xlarge 
+      - c3.4xlarge 
+      - c3.8xlarge 
+      - c4.large 
+      - c4.xlarge 
+      - c4.2xlarge 
+      - c4.4xlarge
+      - c4.8xlarge 
+      - c5.large 
+      - c5.xlarge 
+      - c5.2xlarge 
+      - c5.4xlarge 
+      - c5.9xlarge 
+      - c5.18xlarge 
+      - c5d.large 
+      - c5d.xlarge 
+      - c5d.2xlarge 
+      - c5d.4xlarge 
+      - c5d.9xlarge 
+      - c5d.18xlarge 
+      - cc1.4xlarge 
+      - cc2.8xlarge 
+      - g2.2xlarge 
+      - g2.8xlarge 
+      - g3.4xlarge 
+      - g3.8xlarge 
+      - g3.16xlarge 
+      - cg1.4xlarge 
+      - p2.xlarge 
+      - p2.8xlarge
+      - p2.16xlarge
+      - p3.2xlarge 
+      - p3.8xlarge 
+      - p3.16xlarge 
+      - d2.xlarge 
+      - d2.2xlarge 
+      - d2.4xlarge 
+      - d2.8xlarge 
+      - f1.2xlarge 
+      - f1.4xlarge 
+      - f1.16xlarge 
+      - m5.large 
+      - m5.xlarge 
+      - m5.2xlarge 
+      - m5.4xlarge 
+      - m5.12xlarge 
+      - m5.24xlarge 
+      - m5d.large 
+      - m5d.xlarge 
+      - m5d.2xlarge 
+      - m5d.4xlarge 
+      - m5d.12xlarge 
+      - m5d.24xlarge 
+      - h1.2xlarge
+      - h1.4xlarge 
+      - h1.8xlarge 
+      - h1.16xlarge 
+      - z1d.large 
+      - z1d.xlarge 
+      - z1d.2xlarge 
+      - z1d.3xlarge 
+      - z1d.6xlarge 
+      - z1d.12xlarge 
+      - u-6tb1.metal 
+      - u-9tb1.metal 
+      - u-12tb1.metal
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterLabels:
+      NetworkBenchmarkKeyPair:
+        default: Instances Key Pair
+      NetworkBenchmarkS3Bucket:
+        default: Test S3 Output Bucket
+      NetworkBenchmarkTestDuration:
+        default: Test Duration (in seconds)
+      NetworkBenchmarkVpc:
+        default: VPC
+      NetworkBenchmarkSubnets:
+        default: Subnets (in selected VPC)
+      NetworkBenchmarkServerSpotMaxPrice:
+        default: Maximum Spot Price for Server Instance
+      NetworkBenchmarkServerInstanceType:
+        default: Instance Type for Server Instance
+      NetworkBenchmarkClientSpotMaxPrice:  
+        default: Maximum Spot Price for Client Instance
+      NetworkBenchmarkClientInstanceType:
+        default: Instance Type for Client Instance
+    ParameterGroups:
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - NetworkBenchmarkVpc
+          - NetworkBenchmarkSubnets
+      - Label:
+          default: Instance Configuration
+        Parameters:
+          - NetworkBenchmarkServerInstanceType
+          - NetworkBenchmarkClientInstanceType
+          - NetworkBenchmarkKeyPair
+      - Label:
+          default: Spot Market Configuration
+        Parameters:
+          - NetworkBenchmarkServerSpotMaxPrice
+          - NetworkBenchmarkClientSpotMaxPrice
+      - Label:
+          default: Test Configuration
+        Parameters:
+          - NetworkBenchmarkS3Bucket
+          - NetworkBenchmarkTestDuration
+
+Mappings:
+  AmazonLinuxAmiIds:
+    ap-northeast-1:
+      Ami: ami-08847abae18baa040
+    ap-northeast-2:
+     Ami: ami-012566705322e9a8e
+    ap-northeast-3:
+     Ami: ami-00f7ef6bf92e8f916
+    ap-south-1:
+      Ami: ami-00b6a8a2bd28daf19
+    ap-southeast-1:
+      Ami: ami-01da99628f381e50a
+    ap-southeast-2:
+      Ami: ami-00e17d1165b9dd3ec
+    ca-central-1:
+      Ami: ami-ce1b96aa
+    cn-north-1:
+      Ami: ami-9a06def7
+    cn-northwest-1:
+      Ami: ami-116a7d73
+    eu-central-1:
+      Ami: ami-0f5dbc86dd9cbf7a8
+    eu-west-1:
+      Ami: ami-0bdb1d6c15a40392c
+    eu-west-2:
+      Ami: ami-e1768386
+    eu-west-3:
+      Ami: ami-06340c8c12baa6a09
+    sa-east-1:
+      Ami: ami-0ad7b0031d41ed4b9
+    us-east-1:
+      Ami: ami-04681a1dbd79675a5
+    us-east-2:
+      Ami: ami-0cf31d971a3ca20d6
+    us-west-1:
+      Ami: ami-0782017a917e973e7
+    us-west-2:
+      Ami: ami-6cd6f714 
+
+Resources:
+
+  NetworkBenchmarkClientInstanceLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: Network-Benchmark-Client-Launch-Template
+      LaunchTemplateData:
+        KeyName: !Ref NetworkBenchmarkKeyPair
+        IamInstanceProfile: 
+          Arn: !GetAtt [NetworkBenchmarkInstanceProfile, Arn]
+        ImageId: !FindInMap [AmazonLinuxAmiIds, !Ref 'AWS::Region', Ami]
+        InstanceType: !Ref NetworkBenchmarkClientInstanceType
+        InstanceInitiatedShutdownBehavior: terminate
+        SecurityGroupIds: 
+          - !GetAtt [NetworkBenchmarkSecurityGroup, GroupId]
+        UserData:
+          'Fn::Base64': !Join
+          - ""
+          - - "#!/bin/bash -ex \n"
+            - "yum install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm \n"
+            - "yum clean all \n"
+            - "yum -y install iperf3 jq \n"
+            - "sleep 60 \n"
+            - !Sub "SERVER_INSTANCE_IP=$(aws ec2 describe-instances --region ${AWS::Region} --filters Name='tag:Network-Benchmark-Instance-Role',Values='Server' Name='instance-state-name',Values='pending,running' --query 'Reservations[].Instances[].[PrivateIpAddress]' --output text) \n"
+            - !Sub "SERVER_INSTANCE_ID=$(aws ec2 describe-instances --region ${AWS::Region} --filters Name='tag:Network-Benchmark-Instance-Role',Values='Server' Name='instance-state-name',Values='pending,running' --query 'Reservations[].Instances[].[InstanceId]' --output text) \n"
+            - !Sub "iperf3 --client $SERVER_INSTANCE_IP --time ${NetworkBenchmarkTestDuration} --interval 60 --version4 --json -P 10 | jq -c '{start: .start, intervals: .intervals, end: .end, instanceType: \""
+            - !Sub ${NetworkBenchmarkClientInstanceType}
+            - "\", region: \""
+            - !Sub "${AWS::Region}"
+            - "\"}' | aws s3 cp - \"s3://"
+            - !Sub "${NetworkBenchmarkS3Bucket}"
+            - !Sub "/network/$(date +%Y/%m/%d)/${NetworkBenchmarkClientInstanceType}.json\" \n"
+            - !Sub "aws ec2 terminate-instances --region ${AWS::Region} --instance-ids $SERVER_INSTANCE_ID \n"
+            - "shutdown -h"
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Network-Benchmark-Instance-Role
+                Value: Client
+        InstanceMarketOptions:
+          MarketType: spot
+          SpotOptions: 
+            SpotInstanceType: one-time
+            InstanceInterruptionBehavior: terminate
+            MaxPrice: !Ref NetworkBenchmarkClientSpotMaxPrice
+  
+  NetworkBenchmarkClientSpotFleet:
+    Type: AWS::EC2::SpotFleet
+    Properties:
+      SpotFleetRequestConfigData:
+        IamFleetRole: !GetAtt [NetworkBenchmarkSpotRole, Arn]
+        ReplaceUnhealthyInstances: False  
+        Type: request      
+        TargetCapacity: 1
+        LaunchTemplateConfigs:
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref NetworkBenchmarkClientInstanceLaunchTemplate
+              Version: !GetAtt [NetworkBenchmarkClientInstanceLaunchTemplate, LatestVersionNumber]
+            Overrides:
+              - SubnetId: !Join [',', !Ref NetworkBenchmarkSubnets]
+
+  NetworkBenchmarkServerInstanceLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: Network-Benchmark-Server-Launch-Template
+      LaunchTemplateData:
+        KeyName: !Ref NetworkBenchmarkKeyPair
+        IamInstanceProfile: 
+          Arn: !GetAtt [NetworkBenchmarkInstanceProfile, Arn]
+        ImageId: !FindInMap [AmazonLinuxAmiIds, !Ref 'AWS::Region', Ami]
+        InstanceType: !Ref NetworkBenchmarkServerInstanceType
+        InstanceInitiatedShutdownBehavior: terminate
+        SecurityGroupIds: 
+          - !GetAtt [NetworkBenchmarkSecurityGroup, GroupId]
+        UserData:
+          'Fn::Base64': !Sub |
+            #!/bin/bash -ex
+            yum install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+            yum clean all
+            yum -y install iperf3
+            iperf3 -s
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Network-Benchmark-Instance-Role
+                Value: Server
+        InstanceMarketOptions:
+          MarketType: spot
+          SpotOptions: 
+            SpotInstanceType: one-time
+            InstanceInterruptionBehavior: terminate
+            MaxPrice: !Ref NetworkBenchmarkServerSpotMaxPrice
+  
+  NetworkBenchmarkServerSpotFleet:
+    Type: AWS::EC2::SpotFleet
+    Properties:
+      SpotFleetRequestConfigData:
+        IamFleetRole: !GetAtt [NetworkBenchmarkSpotRole, Arn]
+        ReplaceUnhealthyInstances: False
+        Type: request
+        TargetCapacity: 1
+        LaunchTemplateConfigs:
+          - LaunchTemplateSpecification:
+              LaunchTemplateId: !Ref NetworkBenchmarkServerInstanceLaunchTemplate
+              Version: !GetAtt [NetworkBenchmarkServerInstanceLaunchTemplate, LatestVersionNumber]
+            Overrides:
+              - SubnetId: !Join [',', !Ref NetworkBenchmarkSubnets]
+
+  NetworkBenchmarkSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Network-Benchmark-Client-Security-Group
+      VpcId: !Ref NetworkBenchmarkVpc
+
+  NetworkBenchmarkSecurityGroupIngress:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !GetAtt [NetworkBenchmarkSecurityGroup, GroupId]
+      IpProtocol: tcp
+      FromPort: 5201
+      ToPort: 5201
+      SourceSecurityGroupId: !GetAtt [NetworkBenchmarkSecurityGroup, GroupId]
+
+  NetworkBenchmarkInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: '/'
+      Roles:
+        - !Ref NetworkBenchmarkInstanceRole
+  
+  NetworkBenchmarkInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+            - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: Network-Benchmark-Instance-Profile-Policy
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action: 
+              - s3:PutObject
+            Resource: !Sub arn:aws:s3:::${NetworkBenchmarkS3Bucket}/*
+          - Effect: Allow
+            Action:
+              - ec2:DescribeInstances
+              - ec2:TerminateInstances
+            Resource: '*'
+
+  NetworkBenchmarkSpotRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - spotfleet.amazonaws.com
+            Action:
+            - sts:AssumeRole      
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetRole
