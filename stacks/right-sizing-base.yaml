@@ -585,9 +585,48 @@ Resources:
                 "Get Limits": {
                   "Type": "Task",
                   "Resource": "${RightSizingGetLimitsFunctionArn}",
-                  "Next": "Done",
+                  "Next": "Run Crawler",
                   "InputPath": "$.guid"
-                },              
+                },
+                "Run Crawler": {
+                  "Type": "Task",
+                  "Resource": "${RightSizingRunCrawlerFunctionArn}",
+                  "ResultPath": "$.guid",
+                  "Next": "Wait for Crawler"
+                },
+                "Wait for Crawler": {
+                  "Type": "Wait",
+                  "Seconds": 30,
+                  "Next": "Get Crawler Status"
+                },
+                "Get Crawler Status": {
+                  "Type": "Task",
+                  "Resource": "${RightSizingStatusPollerFunctionArn}",
+                  "Next": "Crawler Complete?",
+                  "InputPath": "$.guid",
+                  "ResultPath": "$.status"
+                },
+                "Crawler Complete?": {
+                  "Type": "Choice",
+                  "Choices": [
+                    {
+                      "Variable": "$.status",
+                      "StringEquals": "FAILED",
+                      "Next": "Crawler Failed"
+                    },
+                    {
+                      "Variable": "$.status",
+                      "StringEquals": "SUCCEEDED",
+                      "Next": "Done"
+                    }
+                  ],
+                  "Default": "Wait for Crawler"
+                },
+                "Crawler Failed": {
+                  "Type": "Fail",
+                  "Cause": "AWS Glue Crawler Failed",
+                  "Error": "Get Crawler returned FAILED"
+                },            
                 "Done": {
                   "Type": "Pass",
                   "End": true
@@ -596,6 +635,7 @@ Resources:
             }
           - {
               RightSizingStatusPollerFunctionArn: !Join [ "", [!GetAtt RightSizingStatusPollerFunction.Arn, ":latest"] ],
+              RightSizingRunCrawlerFunctionArn: !Join [ "", [!GetAtt RightSizingRunCrawlerFunction.Arn, ":latest"] ],
               RightSizingGetLimitsFunctionArn: !Join [ "", [!GetAtt RightSizingGetLimitsFunction.Arn, ":latest"] ],
               RightSizingRefreshLimitsFunctionArn: !Join [ "", [!GetAtt RightSizingRefreshLimitsFunction.Arn, ":latest"] ]
             }
