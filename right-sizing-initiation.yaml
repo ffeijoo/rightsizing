@@ -71,7 +71,7 @@ Mappings:
     RightSizingBaseStackName:
       Name: Right-Sizing-Base-Stack
     RightSizingBaseStackKey:
-      Name: stacks/right-sizing-base.yaml
+      Name: stack/right-sizing-base.yaml
     RightSizingChangeSetName:
       Name: Right-Sizing-Change-Set
 
