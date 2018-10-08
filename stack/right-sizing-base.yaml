@@ -20,7 +20,11 @@ Parameters:
   RightSizingSourceS3BucketName:
     Type: String
   RightSizingSourceS3ObjectKey:
-    Type: String   
+    Type: String
+  RightSizingArtifactS3BucketArn:
+    Type: String
+  RightSizingArtifactS3BucketName:
+    Type: String       
   RightSizingClusterName:
     Type: String
   RightSizingServiceName:
@@ -251,6 +255,13 @@ Resources:
                 Action:
                   - glue:StartCrawler
                   - glue:GetCrawler
+                  - glue:GetMapping
+                  - glue:GetTable
+                  - glue:GetPlan
+                  - glue:CreateJob
+                  - glue:GetJob
+                  - glue:StartJobRun
+                  - glue:GetJobRun
                 Resource: "*"
               - Effect: Allow
                 Action:
@@ -265,12 +276,14 @@ Resources:
                   - s3:GetObject
                 Resource:
                   - !Sub ${RightSizingDataS3BucketArn}/*
+                  - !Sub ${RightSizingArtifactS3BucketArn}/*
               - Effect: Allow
                 Action:
                   - iam:PassRole
                 Resource:
                   - !GetAtt [RightSizingTaskRole, Arn]
                   - !GetAtt [RightSizingTaskExecutionRole, Arn]
+                  - !GetAtt [RightSizingGlueExecutionRole, Arn]
 
   RightSizingGetLimitsFunction:
     Type: AWS::Serverless::Function
@@ -370,6 +383,29 @@ Resources:
         Variables:
           PRICE_LIST_URL: https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/index.csv
           BUCKET_NAME: !Ref RightSizingDataS3BucketName
+          CRAWLER_NAME: !Ref RightSizingGlueTemporaryCrawler
+
+  RightSizingRunJobFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: Right-Sizing-Run-Job-Function
+      Handler: lambda.runjob.lambda_handler
+      Role: !GetAtt [ RightSizingLambdaExecutionRole, Arn ]
+      CodeUri:
+        Bucket: !Ref RightSizingSourceS3BucketName
+        Key: !Ref RightSizingSourceS3ObjectKey
+      Runtime: python3.6
+      Timeout: 25
+      AutoPublishAlias: latest
+      Environment:
+        Variables:
+          JOB_NAME: Right-Sizing-Prices-Parquet-Job
+          JOB_DATABASE_NAME: !Ref RightSizingGlueDatabase
+          JOB_TABLE_NAME: temp_prices
+          JOB_TARGET_PATH: !Sub s3://${RightSizingDataS3BucketName}/prices
+          ROLE_ARN: !GetAtt [RightSizingGlueExecutionRole, Arn]
+          SCRIPT_BUCKET_NAME: !Sub ${RightSizingArtifactS3BucketName}
+          SCRIPT_KEY_NAME: glue-scripts/Right-Sizing-Prices-Parquet-Job
 
   RightSizingPricesStateMachine:
     Type: AWS::StepFunctions::StateMachine
@@ -387,7 +423,7 @@ Resources:
                   "Resource": "${RightSizingGetPriceListFunctionArn}",
                   "ResultPath": "$.guid",
                   "Next": "Run Crawler"
-                },                        
+                },                     
                 "Run Crawler": {
                   "Type": "Task",
                   "Resource": "${RightSizingRunCrawlerFunctionArn}",
@@ -417,7 +453,7 @@ Resources:
                     {
                       "Variable": "$.status",
                       "StringEquals": "SUCCEEDED",
-                      "Next": "Done"
+                      "Next": "Run Job?"
                     }
                   ],
                   "Default": "Wait for Crawler"
@@ -426,7 +462,57 @@ Resources:
                   "Type": "Fail",
                   "Cause": "AWS Glue Crawler Failed",
                   "Error": "Get Crawler returned FAILED"
+                },
+                "Run Job?": {
+                  "Type": "Choice",
+                  "Choices": [
+                    {
+                      "Variable": "$.guid.crawlerName",
+                      "StringEquals": "Right-Sizing-Temporary-Crawler",
+                      "Next": "Run Job"
+                    }
+                  ],
+                  "Default": "Done"
+                },            
+                "Run Job": {
+                  "Type": "Task",
+                  "Resource": "${RightSizingRunJobFunctionArn}",
+                  "ResultPath": "$.guid",
+                  "Next": "Wait for Job"
                 },                
+                "Wait for Job": {
+                  "Type": "Wait",
+                  "Seconds": 30,
+                  "Next": "Get Job Status"
+                },
+                "Get Job Status": {
+                  "Type": "Task",
+                  "Resource": "${RightSizingStatusPollerFunctionArn}",
+                  "Next": "Job Complete?",
+                  "InputPath": "$.guid",
+                  "ResultPath": "$.status"
+                },
+                "Job Complete?": {
+                  "Type": "Choice",
+                  "Choices": [
+                    {
+                      "Variable": "$.status",
+                      "StringEquals": "FAILED",
+                      "Next": "Job Failed"
+                    },
+                    {
+                      "Variable": "$.status",
+                      "StringEquals": "SUCCEEDED",
+                      "Next": "Run Crawler"
+                    }
+                  ],
+                  "Default": "Wait for Job"
+                },
+                "Job Failed": {
+                  "Type": "Fail",
+                  "Cause": "AWS Glue Job Failed",
+                  "Error": "Get Job Run returned status FAILED"
+                },
                 "Done": {
                   "Type": "Pass",
                   "End": true
@@ -435,6 +521,7 @@ Resources:
             }
           - {
               RightSizingGetPriceListFunctionArn: !Join [ "", [!GetAtt RightSizingGetPriceListFunction.Arn, ":latest"] ],
+              RightSizingRunJobFunctionArn: !Join [ "", [!GetAtt RightSizingRunJobFunction.Arn, ":latest"] ],
               RightSizingRunCrawlerFunctionArn: !Join [ "", [!GetAtt RightSizingRunCrawlerFunction.Arn, ":latest"] ],
               RightSizingStatusPollerFunctionArn: !Join [ "", [!GetAtt RightSizingStatusPollerFunction.Arn, ":latest"] ]
             }
@@ -663,6 +750,7 @@ Resources:
                 Action:
                   - lambda:InvokeFunction
                 Resource:
+                  - !Sub ${RightSizingRunJobFunction.Arn}:latest
                   - !Sub ${RightSizingGetPriceListFunction.Arn}:latest
                   - !Sub ${RightSizingRunTaskFunction.Arn}:latest
                   - !Sub ${RightSizingRunCrawlerFunction.Arn}:latest
@@ -694,11 +782,14 @@ Resources:
             Action:
               - s3:ListBucket
               - s3:GetObject
+              - s3:PutObject
+              - s3:DeleteObject
             Resource:
               - !Sub ${RightSizingDataS3BucketArn}/*
+              - !Sub ${RightSizingArtifactS3BucketArn}/glue-scripts/*
 
   RightSizingGlueDatabase:
-    Type: "AWS::Glue::Database"
+    Type: AWS::Glue::Database
     Properties:
       DatabaseInput:
         Name: "rightsizing"
@@ -712,12 +803,26 @@ Resources:
       DatabaseName: !Ref RightSizingGlueDatabase
       Targets:
         S3Targets:
-          - Path: !Join [ "", ["s3://", !Ref RightSizingDataS3BucketName] ]
-          - Exclusions:
-              - query-results/**
+          - Path: !Join [ "", ["s3://", !Ref RightSizingDataS3BucketName, "/network"] ]
+          - Path: !Join [ "", ["s3://", !Ref RightSizingDataS3BucketName, "/metrics"] ]
+          - Path: !Join [ "", ["s3://", !Ref RightSizingDataS3BucketName, "/prices"] ]
       SchemaChangePolicy:
         UpdateBehavior: "UPDATE_IN_DATABASE"
         DeleteBehavior: "DELETE_FROM_DATABASE"    
+
+  RightSizingGlueTemporaryCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: Right-Sizing-Temporary-Crawler
+      Role: !GetAtt [RightSizingGlueExecutionRole, Arn]
+      DatabaseName: !Ref RightSizingGlueDatabase
+      Targets:
+        S3Targets:
+          - Path: !Join [ "", ["s3://", !Ref RightSizingDataS3BucketName, "/_temporary/prices"] ]
+      TablePrefix: temp_      
+      SchemaChangePolicy:
+        UpdateBehavior: "UPDATE_IN_DATABASE"
+        DeleteBehavior: "DELETE_FROM_DATABASE"  
 
   RightSizingMaxNamedQuery:
     Type: AWS::Athena::NamedQuery
@@ -729,8 +834,8 @@ Resources:
           b.vcpu,
           b.memory,
           b.storage,
-          b."network performance",
-          b."processor architecture",
+          b.network_performance,
+          b.processor_architecture,
           b.priceperunit,
           a.instanceid,
           max(a.maxcpu) as maxcpu,
@@ -744,7 +849,7 @@ Resources:
                     az,
                     max(CPUUtilization) as maxcpu,
                     max(diskreadops/60 + diskwriteops/60) as maxiops,
-                    max((networkin/60/1024/1024)*8 + (networkout/60/1024/1024)*8) as maxnetwork
+                    max((networkin/60/1024/1024)*8 + (networkout/60/1024/1024)*8) as maxnetwork -- in Megabytes (Mbps)
                 from metrics 
                 where accountid is not null
                 group by instanceid, 
@@ -765,7 +870,7 @@ Resources:
                                       az,
                                       max(CPUUtilization) as maxcpu,
                                       max(diskreadops/60 + diskwriteops/60) as maxiops,
-                                      max((networkin/60/1024/1024)*8 + (networkout/60/1024/1024)*8) as maxnetwork
+                                      max((networkin/60/1024/1024)*8 + (networkout/60/1024/1024)*8) as maxnetwork --in Megabytes (Mbps)
                                 from metrics 
                                 where accountid is not null
                                 group by instanceid,
@@ -777,7 +882,7 @@ Resources:
                     )
                 where topcpu<60 --max CPU utilization < 60%
             )
-        and a.instancetype = b."instance type"
+        and a.instancetype = b.instance_type
         and substr(a.az, 1, length(a.az)-1) = case b.location
                     when 'US East (Ohio)' then 'us-east-2'
                     when 'US East (N. Virginia)' then 'us-east-1'
@@ -801,15 +906,15 @@ Resources:
         and b.termtype = 'OnDemand'
         and b.servicecode = 'AmazonEC2'
         and b.tenancy = 'Shared'
-        and b."operating system" = 'Linux' 
-        and b."pre installed s/w" = 'NA'
+        and b.operating_system = 'Linux' 
+        and b."pre_installed_s/w" = 'NA'
         group by a.az,
                 a.instancetype,
                 b.vcpu,
                 b.memory,
                 b.storage,
-                b."network performance",
-                b."processor architecture",
+                b.network_performance,
+                b.processor_architecture,
                 b.priceperunit,
                 a.instanceid,
                 a.instancetags
@@ -826,8 +931,8 @@ Resources:
           b.vcpu,
           b.memory,
           b.storage,
-          b."network performance",
-          b."processor architecture",
+          b.network_performance,
+          b.processor_architecture,
           b.priceperunit,
           a.instanceid,
           approx_percentile(a.p95cpu,     0.95) as p95cpu,
@@ -850,7 +955,7 @@ Resources:
                         az
             ) a, 
               prices b 
-        where a.instancetype = b."instance type"
+        where a.instancetype = b.instance_type
         and substr(a.az, 1, length(a.az)-1) = case b.location
                     when 'US East (Ohio)' then 'us-east-2'
                     when 'US East (N. Virginia)' then 'us-east-1'
@@ -874,15 +979,15 @@ Resources:
         and b.termtype = 'OnDemand'
         and b.servicecode = 'AmazonEC2'
         and b.tenancy = 'Shared'
-        and b."operating system" = 'Linux' 
-        and b."pre installed s/w" = 'NA'
+        and b.operating_system = 'Linux' 
+        and b."pre_installed_s/w" = 'NA'
         group by a.az,
                 a.instancetype,
                 b.vcpu,
                 b.memory,
                 b.storage,
-                b."network performance",
-                b."processor architecture",
+                b.network_performance,
+                b.processor_architecture,
                 b.priceperunit,
                 a.instanceid,
                 a.instancetags

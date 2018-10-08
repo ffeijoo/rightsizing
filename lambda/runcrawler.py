@@ -4,12 +4,14 @@ import os
 
 def lambda_handler(event, context):
 
+    crawlerName = os.environ['CRAWLER_NAME']
+    if 'crawlerName' in event['guid'] and event['guid']['crawlerName'] is not '':
+        crawlerName = event['guid']['crawlerName']
+
     try:
-        crawlerName = os.environ['CRAWLER_NAME']
         response = boto3.client(service_name='glue').start_crawler(
             Name=crawlerName,
-        )
-                
+        )                
         return {
             'type': 'crawler',
             'crawlerName': crawlerName

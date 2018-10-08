@@ -62,3 +62,18 @@ def lambda_handler(event, context):
             message = 'Error getting Trusted Advisor Check Refresh status'
             print(message)
             raise Exception(message)
+
+    elif event['type'] == 'job':
+        runId = event['runId'].split(',')
+        try:
+            response = boto3.client(service_name='glue').get_job_run(
+                JobName=event['jobName'],
+                RunId=event['runId'])
+
+            return response['JobRun']['JobRunState']
+        
+        except Exception as e:
+            print(e)
+            message = 'Error getting Job status'
+            print(message)
+            raise Exception(message)

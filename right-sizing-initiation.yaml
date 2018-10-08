@@ -102,6 +102,12 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+        - Id: 'Right-Sizing-Staging-Expiration'
+          Status: 'Enabled'
+          Prefix: '_temporary'
+          ExpirationInDays: '1'
 
   RightSizingCloudFormationRole:
     Type: AWS::IAM::Role
@@ -334,6 +340,8 @@ Resources:
                         "RightSizingServiceName": "${RightSizingServiceName}",
                         "RightSizingDataS3BucketArn": "${RightSizingDataS3BucketArn}",
                         "RightSizingDataS3BucketName": "${RightSizingDataS3Bucket}",
+                        "RightSizingArtifactS3BucketArn": "${RightSizingArtifactS3BucketArn}",
+                        "RightSizingArtifactS3BucketName": "${RightSizingPipelineArtifactS3Bucket}",
                         "RightSizingSourceS3BucketName" : { "Fn::GetArtifactAtt": ["SourceApp", "BucketName"] },
                         "RightSizingSourceS3ObjectKey" : { "Fn::GetArtifactAtt": ["SourceApp", "ObjectKey"] }
                         }
@@ -342,7 +350,8 @@ Resources:
                         RightSizingRepositoryName: !FindInMap [RepositoryConfiguration, RightSizingRepositoryName, Name],
                         RightSizingClusterName: !FindInMap [ClusterConfiguration, RightSizingClusterName, Name],
                         RightSizingServiceName: !FindInMap [ClusterConfiguration, RightSizingServiceName, Name],
-                        RightSizingDataS3BucketArn: !GetAtt [RightSizingDataS3Bucket, Arn]
+                        RightSizingDataS3BucketArn: !GetAtt [RightSizingDataS3Bucket, Arn],
+                        RightSizingArtifactS3BucketArn: !GetAtt [RightSizingPipelineArtifactS3Bucket, Arn]
                       }
               RunOrder: 1
             - Name: ExecuteChangeSet

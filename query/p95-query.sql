@@ -4,8 +4,8 @@
     b.vcpu,
     b.memory,
     b.storage,
-    b."network performance",
-    b."processor architecture",
+    b.network_performance,
+    b.processor_architecture,
     b.priceperunit,
     a.instanceid,
     approx_percentile(a.p95cpu,     0.95) as p95cpu,
@@ -28,7 +28,7 @@
                   az
       ) a, 
         prices b 
-  where a.instancetype = b."instance type"
+  where a.instancetype = b.instance_type
   and substr(a.az, 1, length(a.az)-1) = case b.location
               when 'US East (Ohio)' then 'us-east-2'
               when 'US East (N. Virginia)' then 'us-east-1'
@@ -52,15 +52,15 @@
   and b.termtype = 'OnDemand'
   and b.servicecode = 'AmazonEC2'
   and b.tenancy = 'Shared'
-  and b."operating system" = 'Linux' 
-  and b."pre installed s/w" = 'NA'
+  and b.operating_system = 'Linux' 
+  and b."pre_installed_s/w" = 'NA'
   group by a.az,
           a.instancetype,
           b.vcpu,
           b.memory,
           b.storage,
-          b."network performance",
-          b."processor architecture",
+          b.network_performance,
+          b.processor_architecture,
           b.priceperunit,
           a.instanceid,
           a.instancetags

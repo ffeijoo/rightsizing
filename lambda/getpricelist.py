@@ -24,9 +24,11 @@ def lambda_handler(event, context):
                 writer.writerow(row)
 
         boto3.client(service_name='s3').put_object(
-            Body=out.getvalue(), Bucket=os.environ['BUCKET_NAME'], Key='prices/ec2.csv')
+            Body=out.getvalue(), Bucket=os.environ['BUCKET_NAME'], Key='_temporary/prices/ec2.csv')
             
-        #https://docs.aws.amazon.com/athena/latest/ug/glue-best-practices.html
+        return {
+            'crawlerName': os.environ['CRAWLER_NAME']
+        }
 
     except Exception as e:
         print(e)
