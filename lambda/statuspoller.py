@@ -49,7 +49,7 @@ def lambda_handler(event, context):
 
             ready = True
             for item in response['statuses']:
-                status = item[status]
+                status = item['status']
                 ready = ready and ( status == 'success' or status == 'none')
 
                 if status == 'abandoned':

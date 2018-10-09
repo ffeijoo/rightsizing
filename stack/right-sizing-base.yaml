@@ -33,7 +33,7 @@ Parameters:
 Mappings:
   LambdaConfiguration:
     TrustedAdvisorChecks:
-      Ids: fH7LL0l7J9,dH7RR0l6J9,cG7HH0l7J9,tV7YY0l7J9,gI7MM0l7J9,aW9HH0l8J6,0Xc6LMYG8P,iH7PP0l7J9
+      Ids: eI7KK0l7J9,fH7LL0l7J9,dH7RR0l6J9,cG7HH0l7J9,tV7YY0l7J9,gI7MM0l7J9,aW9HH0l8J6,0Xc6LMYG8P,iH7PP0l7J9,iK7OO0l7J9,lN7RR0l7J9,kM7QQ0l7J9,jL7PP0l7J9
 
 Resources:
 
@@ -284,6 +284,10 @@ Resources:
                   - !GetAtt [RightSizingTaskRole, Arn]
                   - !GetAtt [RightSizingTaskExecutionRole, Arn]
                   - !GetAtt [RightSizingGlueExecutionRole, Arn]
+              - Effect: Allow
+                Action:
+                  - support:*
+                Resource: "*"             
 
   RightSizingGetLimitsFunction:
     Type: AWS::Serverless::Function
@@ -300,7 +304,6 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref RightSizingDataS3BucketName
-          SERVICE_CHECKS: !FindInMap [LambdaConfiguration, TrustedAdvisorChecks, Ids]
 
   RightSizingRefreshLimitsFunction:
     Type: AWS::Serverless::Function

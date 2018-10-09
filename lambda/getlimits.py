@@ -7,7 +7,7 @@ import datetime as dt
 
 def lambda_handler(event, context):
 
-    checkIds = os.environ['SERVICE_CHECKS']
+    checkIds = event['checkIds']
 
     support = boto3.client(service_name='support')
 
@@ -43,8 +43,8 @@ def lambda_handler(event, context):
                         flag_item['metadata'][5])) # is the flag status
         
         boto3.client(service_name='s3').put_object(
-            Body=out.getvalue(), Bucket=os.environ['BUCKET_NAME'], Key='limits/tachecks.csv', Metatada={
-                'created_date': str(dt.datetime.date.today())
+            Body=out.getvalue(), Bucket=os.environ['BUCKET_NAME'], Key='limits/tachecks.csv', Metadata={
+                'created_date': str(dt.date.today())
             })
   
     except Exception as e:
