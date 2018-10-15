@@ -29,6 +29,8 @@ Parameters:
     Type: String
   RightSizingServiceName:
     Type: String
+  RightSizingMetricsPeriod:
+    Type: String
     
 Mappings:
   LambdaConfiguration:
@@ -204,7 +206,7 @@ Resources:
             - Name: STATISTICS
               Value: Maximum
             - Name: PERIOD
-              Value: 60
+              Value: !Ref RightSizingMetricsPeriod
             - Name: START_TIME
               Value: 120
             - Name: END_TIME

@@ -21,6 +21,15 @@ Parameters:
       - BUILD_GENERAL1_SMALL
       - BUILD_GENERAL1_MEDIUM
       - BUILD_GENERAL1_LARGE
+  RightSizingMetricsPeriod: 
+    Type: String
+    Default: 30
+    AllowedValues: 
+      - 1
+      - 5
+      - 10
+      - 30
+      - 60
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -35,6 +44,8 @@ Metadata:
         default: Public Subnet 2 CIDR Block
       RightSizingCodeBuildComputeType:
         default: Compute Instance Type
+      RightSizingMetricsPeriod:
+        default: Metrics Granularity (minutes)
     ParameterGroups:
       - Label:
           default: Cluster Configuration
@@ -43,14 +54,14 @@ Metadata:
           - RightSizingPublicSubnetOneCidrBlock
           - RightSizingPublicSubnetTwoCidrBlock
       - Label:
-          default: Bucket Configuration
-        Parameters:
-          - RightSizingPipelineS3Bucket   
-      - Label:
           default: Build Configuration
         Parameters:
-          - RightSizingCodeBuildComputeType             
-
+          - RightSizingPipelineS3Bucket
+          - RightSizingCodeBuildComputeType          
+      - Label:
+          default: Metrics Configuration
+        Parameters:
+          - RightSizingMetricsPeriod
 
 Mappings:
   ClusterConfiguration:
@@ -343,7 +354,8 @@ Resources:
                         "RightSizingArtifactS3BucketArn": "${RightSizingArtifactS3BucketArn}",
                         "RightSizingArtifactS3BucketName": "${RightSizingPipelineArtifactS3Bucket}",
                         "RightSizingSourceS3BucketName" : { "Fn::GetArtifactAtt": ["SourceApp", "BucketName"] },
-                        "RightSizingSourceS3ObjectKey" : { "Fn::GetArtifactAtt": ["SourceApp", "ObjectKey"] }
+                        "RightSizingSourceS3ObjectKey" : { "Fn::GetArtifactAtt": ["SourceApp", "ObjectKey"] },
+                        "RightSizingMetricsPeriod" : "${RightSizingMetricsPeriod}"
                         }
                     - {
                         RightSizingRepositoryArn: !GetAtt [ RightSizingRepository, Arn ],
