@@ -2,9 +2,6 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: Right Sizing Initiation Stack
 
 Parameters:
-  RightSizingPipelineS3Bucket:  
-    Type: String
-    Default: right-sizing-configuration
   RightSizingVpcCidrBlock:
     Type: String
     Default: 10.215.0.0/24
@@ -34,8 +31,6 @@ Parameters:
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterLabels:
-      RightSizingPipelineS3Bucket:
-        default: Configuration Bucket
       RightSizingVpcCidrBlock:
         default: VPC CIDR Block
       RightSizingPublicSubnetOneCidrBlock:
@@ -56,7 +51,6 @@ Metadata:
       - Label:
           default: Build Configuration
         Parameters:
-          - RightSizingPipelineS3Bucket
           - RightSizingCodeBuildComputeType          
       - Label:
           default: Metrics Configuration
@@ -75,6 +69,9 @@ Mappings:
   PipelineConfiguration:
     RightSizingPipelineName:
       Name: Right-Sizing-CodePipeline
+    RightSizingPipelineZip:
+      Name: right-sizing-configuration.zip
+      Url: http://github.com/ffeijoo/rightsizing/archive/master.zip
   BuildConfiguration:
     RightSizingBuildName:
       Name: Right-Sizing-CodeBuild
@@ -87,6 +84,113 @@ Mappings:
       Name: Right-Sizing-Change-Set
 
 Resources:
+
+  RightSizingPipelineS3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub right-sizing-configuration-${AWS::AccountId}
+      VersioningConfiguration:
+        Status: Enabled
+
+  RightSizingDeployerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.lambda_handler
+      Role: !GetAtt RightSizingDeployerExecutionRole.Arn
+      Runtime: python3.6
+      Timeout: 25
+      Code:
+        ZipFile: |
+          import json
+          import cfnresponse
+          import urllib
+          import boto3
+          import os
+          import zipfile
+
+          def lambda_handler(event, context):
+            try:
+              if event['RequestType'] in ['Create', 'Update']:
+                
+                zip_path = '/tmp/' + os.environ['KEY_NAME']
+                extract_path = '/tmp/uncompressed'
+                
+                urllib.request.urlretrieve(os.environ['ZIP_URL'], zip_path)         
+                
+                zip_src = zipfile.ZipFile(zip_path, 'r')
+                zip_src.extractall(extract_path)
+                zip_src.close()
+
+                zip_dest = zipfile.ZipFile(zip_path, 'w')
+                len_dir_path = len(extract_path + os.listdir(extract_path)[0]) + 1
+                
+                for root, dirs, files in os.walk(extract_path):
+                  for file in files:
+                    file_path = os.path.join(root, file)
+                    zip_dest.write(os.path.join(root, file), file_path[len_dir_path :])
+                  
+                zip_dest.close()
+              
+                data = open(zip_path, 'rb')       
+                response = boto3.client(service_name='s3').put_object(
+                  Bucket=os.environ['BUCKET_NAME'], 
+                  Key=os.environ['KEY_NAME'], 
+                  Body=data)           
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              
+              elif event['RequestType'] == 'Delete':
+                response = boto3.client(service_name='s3').delete_object(
+                  Bucket=os.environ['BUCKET_NAME'], 
+                  Key=os.environ['KEY_NAME'])
+                cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+            
+            except Exception as e:
+              print(e)
+              message = 'Error deploying config artifact from GitHub'
+              print(message)
+              raise Exception(message)
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref RightSizingPipelineS3Bucket
+          KEY_NAME: !FindInMap [PipelineConfiguration, RightSizingPipelineZip, Name]
+          ZIP_URL : !FindInMap [PipelineConfiguration, RightSizingPipelineZip, Url]
+  
+  RightSizingDeployerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: Right-Sizing-Deployer-Execution-Policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub arn:aws:s3:::${RightSizingPipelineS3Bucket}/*
+
+  RightSizingDeployerCfn:
+    Type: "Custom::RightSizingDeployerLambda"
+    Properties:
+      ServiceToken: !GetAtt [RightSizingDeployerLambda, Arn]
 
   RightSizingRepository:
     Type: AWS::ECR::Repository
@@ -286,6 +390,7 @@ Resources:
                 
   RightSizingCodePipeline:
     Type: AWS::CodePipeline::Pipeline
+    DependsOn: RightSizingDeployerCfn
     Properties:
       Name: !FindInMap [PipelineConfiguration, RightSizingPipelineName, Name]
       RoleArn: !GetAtt RightSizingCodePipelineRole.Arn
@@ -305,7 +410,7 @@ Resources:
                 - Name: SourceApp
               Configuration:
                 S3Bucket: !Ref RightSizingPipelineS3Bucket
-                S3ObjectKey: right-sizing-configuration.zip
+                S3ObjectKey: !FindInMap [PipelineConfiguration, RightSizingPipelineZip, Name]
               RunOrder: 1
         - Name: Build
           Actions:
